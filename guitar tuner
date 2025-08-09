@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Guitar Tuner</title>
+  <meta name="description" content="A privacy-friendly, client-side guitar tuner that uses your computer's microphone. Deployable on GitHub Pages.">
+  <style>
+    :root{
+      --bg:#0b0f14; --fg:#e6eef7; --muted:#a8b3c2; --accent:#63b3ed; --good:#7bd389; --warn:#f6c177; --bad:#ff6b6b;
+      --card:#11161d; --edge:#1a222d;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0; font-family:Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+      background:radial-gradient(1200px 600px at 70% -10%, #132033, transparent 60%), var(--bg);
+      color:var(--fg); display:flex; align-items:center; justify-content:center; padding:24px;
+    }
+    .wrap{width:min(900px,95vw);}
+    header{display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:18px}
+    h1{font-size:clamp(24px,4vw,36px); margin:0; letter-spacing:.3px}
+    .btn{appearance:none; border:1px solid var(--edge); background:var(--card); color:var(--fg); padding:10px 14px; border-radius:14px; cursor:pointer; font-weight:600}
+    .btn[disabled]{opacity:.55; cursor:not-allowed}
+    .grid{display:grid; grid-template-columns:1.2fr .8fr; gap:16px}
+    @media (max-width:800px){ .grid{grid-template-columns:1fr;}}
+
+    .card{background:linear-gradient(180deg, rgba(255,255,255,.02), transparent 40%), var(--card); border:1px solid var(--edge); border-radius:18px; padding:16px}
+
+    .readout{display:grid; grid-template-columns:1fr 1fr; gap:12px; align-items:center}
+    .big{font-size:56px; font-weight:800; letter-spacing:.5px}
+    .hz{font-size:18px; color:var(--muted)}
+    .cents{font-variant-numeric:tabular-nums; font-weight:700}
+
+    .needle-box{position:relative; height:200px;}
+    canvas{width:100%; height:100%; display:block}
+
+    .controls{display:flex; flex-wrap:wrap; gap:12px; align-items:center; margin-top:8px}
+    label{font-size:14px; color:var(--muted)}
+    input[type="range"]{width:180px}
+    .hint{font-size:13px; color:var(--muted); margin-top:8px}
+
+    .strings{display:grid; grid-template-columns:repeat(6,1fr); gap:8px; margin-top:8px}
+    .string{padding:10px; text-align:center; border:1px dashed var(--edge); border-radius:12px; color:var(--muted)}
+    .string.active{border-style:solid; color:var(--fg);}
+
+    footer{margin-top:18px; font-size:12px; color:var(--muted); display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap}
+    a{color:var(--accent); text-decoration:none}
+  </style>
+</head>
+<body>
+  <!--
+    MIT License
+    Copyright (c) 2025
+    Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction...
+  -->
+  <div class="wrap">
+    <header>
+      <h1>🎸 Guitar Tuner</h1>
+      <div style="display:flex; gap:8px">
+        <button id="toggle" class="btn">Start microphone</button>
+        <button id="calibBtn" class="btn" title="Calibrate reference A4 by holding a known A note">Auto-calibrate A4</button>
+      </div>
+    </header>
+
+    <div class="grid">
+      <section class="card">
+        <div class="needle-box">
+          <canvas id="meter" width="800" height="300" aria-label="tuning meter"></canvas>
+        </div>
+        <div class="readout">
+          <div>
+            <div class="big" id="note">--</div>
+            <div class="hz" id="freq">0.00 Hz</div>
+          </div>
+          <div style="text-align:right">
+            <div class="cents" id="cents">±0¢</div>
+            <div class="hz" id="status">Idle</div>
+          </div>
+        </div>
+        <div class="controls">
+          <label>Ref A4: <span id="a4v">440.0</span> Hz</label>
+          <input id="a4" type="range" min="400" max="480" step="0.1" value="440">
+
+          <label>Noise gate</label>
+          <input id="gate" type="range" min="-90" max="-30" step="1" value="-60">
+
+          <label>Smoothing</label>
+          <input id="smooth" type="range" min="0" max="0.95" step="0.05" value="0.5">
+        </div>
+        <div class="hint">Tip: pluck a single string cleanly. Use the meter to center within ±5 cents for accurate tuning.</div>
+      </section>
+
+      <aside class="card">
+        <h3 style="margin-top:0">Target strings (E standard)</h3>
+        <div class="strings" id="strings"></div>
+        <div class="hint">Closest target is highlighted. Switch to Drop D, etc. by editing <code>STANDARD_TUNING</code> in the source.</div>
+        <hr style="border-color:var(--edge); opacity:.4">
+        <details>
+          <summary><strong>Privacy</strong></summary>
+          <p>Your audio never leaves this page. All signal processing happens locally in your browser via the Web Audio API.</p>
+        </details>
+        <details>
+          <summary><strong>Troubleshooting</strong></summary>
+          <ul>
+            <li>Use HTTPS (GitHub Pages is fine) or the browser will block the mic.</li>
+            <li>On iOS/Safari, press <em>Start microphone</em> once (user gesture required).</li>
+            <li>If the needle jitters, increase <em>Smoothing</em> or pluck nearer the neck.</li>
+          </ul>
+        </details>
+      </aside>
+    </div>
+
+    <footer>
+      <span>Built with ❤️ using Web Audio. <a href="https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API" target="_blank" rel="noopener">Learn more</a>.</span>
+      <span><a href="https://github.com/" target="_blank" rel="noopener">Host on GitHub Pages</a></span>
+    </footer>
+  </div>
+
+<script>
+(() => {
+  // --- Config ---
+  const STANDARD_TUNING = [
+    { name: 'E4', freq: 329.63 },
+    { name: 'B3', freq: 246.94 },
+    { name: 'G3', freq: 196.00 },
+    { name: 'D3', freq: 146.83 },
+    { name: 'A2', freq: 110.00 },
+    { name: 'E2', freq: 82.41 },
+  ];
+
+  // --- DOM ---
+  const $ = (s) => document.querySelector(s);
+  const meter = $('#meter');
+  const ctx = meter.getContext('2d');
+  const noteEl = $('#note');
+  const freqEl = $('#freq');
+  const centsEl = $('#cents');
+  const statusEl = $('#status');
+  const toggleBtn = $('#toggle');
+  const calibBtn = $('#calibBtn');
+  const a4Slider = $('#a4');
+  const a4ValueEl = $('#a4v');
+  const gateSlider = $('#gate');
+  const smoothSlider = $('#smooth');
+  const stringsEl = $('#strings');
+
+  // Create string chips
+  STANDARD_TUNING.forEach((s, i) => {
+    const div = document.createElement('div');
+    div.className = 'string';
+    div.id = `string-${i}`;
+    div.textContent = `${s.name} (${s.freq.toFixed(2)} Hz)`;
+    stringsEl.appendChild(div);
+  });
+
+  // --- State ---
+  let audioCtx, analyser, mediaStream, data;
+  let running = false;
+  let a4 = parseFloat(a4Slider.value);
+  let smooth = parseFloat(smoothSlider.value);
+  let lastHz = 0;
+  let calibRunning = false;
+
+  a4Slider.addEventListener('input', () => { a4 = parseFloat(a4Slider.value); a4ValueEl.textContent = a4.toFixed(1); });
+  smoothSlider.addEventListener('input', () => smooth = parseFloat(smoothSlider.value));
+
+  toggleBtn.addEventListener('click', async () => {
+    if (!running) await start(); else await stop();
+  });
+
+  calibBtn.addEventListener('click', async () => {
+    if (!running) return; // need audio first
+    calibRunning = true;
+    statusEl.textContent = 'Calibrating A4… hold a clean A note';
+    const t0 = performance.now();
+    const samples = [];
+    while (performance.now() - t0 < 1500) { // ~1.5 s average
+      const f = detect();
+      if (f > 0) samples.push(f);
+      await new Promise(r => requestAnimationFrame(r));
+    }
+    if (samples.length) {
+      const avg = samples.reduce((a,b)=>a+b,0)/samples.length;
+      // Snap to nearest A (…220, 440, 880…)
+      const octaveA = Math.pow(2, Math.round(Math.log2(avg/440)))*440;
+      a4 = octaveA; a4Slider.value = a4.toFixed(1); a4ValueEl.textContent = a4.toFixed(1);
+      statusEl.textContent = `A4 calibrated to ${a4.toFixed(1)} Hz`;
+    } else {
+      statusEl.textContent = 'Calibration failed – play louder/cleaner';
+    }
+    calibRunning = false;
+  });
+
+  async function start(){
+    try{
+      mediaStream = await navigator.mediaDevices.getUserMedia({ audio: {
+        echoCancellation: false, noiseSuppression: false, autoGainControl: false
+      }});
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const src = audioCtx.createMediaStreamSource(mediaStream);
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 4096; // higher => better low-freq resolution
+      analyser.smoothingTimeConstant = 0; // we handle smoothing ourselves
+      src.connect(analyser);
+      data = new Float32Array(analyser.fftSize);
+      running = true;
+      toggleBtn.textContent = 'Stop microphone';
+      statusEl.textContent = 'Listening…';
+      loop();
+    }catch(err){
+      console.error(err);
+      statusEl.textContent = 'Microphone blocked or unavailable';
+    }
+  }
+
+  async function stop(){
+    running = false;
+    toggleBtn.textContent = 'Start microphone';
+    statusEl.textContent = 'Idle';
+    if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
+    if (audioCtx) await audioCtx.close();
+  }
+
+  function loop(){
+    if (!running) return;
+    const f = detect();
+    renderMeter(f);
+    requestAnimationFrame(loop);
+  }
+
+  // --- Pitch detection via autocorrelation + parabolic interpolation ---
+  function detect(){
+    analyser.getFloatTimeDomainData(data);
+
+    // Compute RMS for gate
+    let rms = 0; for (let i=0;i<data.length;i++){ const v=data[i]; rms += v*v; }
+    rms = Math.sqrt(rms/data.length);
+    const gateDb = parseFloat(gateSlider.value);
+    const rmsDb = 20 * Math.log10(rms + 1e-12);
+    if (rmsDb < gateDb) { // too quiet, treat as no signal
+      updateReadout(0, 0, 'Too quiet');
+      return 0;
+    }
+
+    // Normalize & remove DC offset
+    let mean = 0; for (let i=0;i<data.length;i++) mean += data[i];
+    mean /= data.length;
+    for (let i=0;i<data.length;i++) data[i] -= mean;
+
+    const size = data.length;
+    const sampleRate = audioCtx.sampleRate;
+
+    // Autocorrelation
+    const maxLag = Math.floor(sampleRate / 50);   // ~50 Hz min
+    const minLag = Math.floor(sampleRate / 1100); // ~1100 Hz max
+    let bestLag = -1, bestCorr = 0;
+    let prevCorr = 1;
+
+    for (let lag=minLag; lag<maxLag; lag++){
+      let corr = 0;
+      for (let i=0; i<size - lag; i++){
+        corr += data[i] * data[i+lag];
+      }
+      // Emphasize local peaks
+      if (corr > bestCorr && corr > prevCorr){
+        bestCorr = corr; bestLag = lag;
+      }
+      prevCorr = corr;
+    }
+
+    if (bestLag === -1) { updateReadout(0, 0, 'No pitch'); return 0; }
+
+    // Parabolic interpolation for sub-sample precision
+    const c0 = acf(bestLag-1), c1 = acf(bestLag), c2 = acf(bestLag+1);
+    let lagRefined = bestLag;
+    const denom = (c0 - 2*c1 + c2);
+    if (denom !== 0){
+      const delta = 0.5 * (c0 - c2) / denom;
+      lagRefined = bestLag + delta;
+    }
+
+    const hzRaw = sampleRate / lagRefined;
+    const hz = smooth > 0 ? (lastHz*(smooth) + hzRaw*(1-smooth)) : hzRaw;
+    lastHz = hz;
+
+    const { name, targetHz, cents } = describePitch(hz, a4);
+    updateReadout(hz, cents, calibRunning ? 'Calibrating…' : '');
+    highlightClosestString(hz);
+    return hz;
+
+    // Helper: windowed autocorrelation value at lag L
+    function acf(L){
+      let s=0; for (let i=0;i<size-L;i++){ s += data[i]*data[i+L]; } return s;
+    }
+  }
+
+  function describePitch(hz, refA){
+    if (!hz || !isFinite(hz)) return { name:'--', targetHz:0, cents:0 };
+    const noteNum = 69 + 12*Math.log2(hz / refA);
+    const nearest = Math.round(noteNum);
+    const cents = Math.floor(1200 * Math.log2(hz / (refA * Math.pow(2, (nearest-69)/12))));
+    const name = midiToName(nearest);
+    const targetHz = refA * Math.pow(2, (nearest-69)/12);
+    return { name, targetHz, cents };
+  }
+
+  function midiToName(midi){
+    const NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+    const octave = Math.floor(midi/12) - 1;
+    const n = NAMES[midi % 12];
+    return `${n}${octave}`;
+  }
+
+  function highlightClosestString(hz){
+    if (!hz) { [...stringsEl.children].forEach(el=>el.classList.remove('active')); return; }
+    let best=-1, diff=1e9;
+    STANDARD_TUNING.forEach((s,i)=>{
+      const d = Math.abs(Math.log2(hz/s.freq)); // relative distance in octaves
+      if (d < diff){ diff=d; best=i; }
+    });
+    [...stringsEl.children].forEach((el,i)=>{
+      el.classList.toggle('active', i===best);
+    });
+  }
+
+  // --- UI render ---
+  function renderMeter(hz){
+    const w = meter.width, h = meter.height;
+    ctx.clearRect(0,0,w,h);
+
+    // Scale: -50 to +50 cents
+    const { cents } = describePitch(hz, a4);
+    const c = Math.max(-50, Math.min(50, isFinite(cents)? cents : 0));
+    const x = w/2 + (c/50) * (w*0.4);
+
+    // Baseline and ticks
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#223245';
+    ctx.beginPath(); ctx.moveTo(w*0.05, h*0.7); ctx.lineTo(w*0.95, h*0.7); ctx.stroke();
+    for (let i=-5;i<=5;i++){
+      const tx = w/2 + i*(w*0.4)/5;
+      const th = i%5===0 ? 36 : 18;
+      ctx.beginPath(); ctx.moveTo(tx, h*0.7); ctx.lineTo(tx, h*0.7 - th); ctx.stroke();
+      if (i%5===0){
+        ctx.fillStyle = '#7a8aa0';
+        ctx.font = '14px system-ui';
+        ctx.textAlign = 'center';
+        ctx.fillText(`${i*10}¢`, tx, h*0.7 - th - 6);
+      }
+    }
+
+    // Good zone
+    ctx.fillStyle = 'rgba(123, 211, 137, 0.15)';
+    ctx.fillRect(w/2 - w*0.04, h*0.7 - 40, w*0.08, 40);
+
+    // Needle
+    ctx.strokeStyle = '#e6eef7';
+    ctx.lineWidth = 3.5;
+    ctx.beginPath();
+    ctx.moveTo(w/2, h*0.85);
+    ctx.lineTo(x, h*0.25);
+    ctx.stroke();
+
+    // Tip
+    ctx.beginPath();
+    ctx.arc(x, h*0.25, 6, 0, Math.PI*2);
+    ctx.fillStyle = Math.abs(c) <= 5 ? '#7bd389' : (Math.abs(c) <= 15 ? '#f6c177' : '#ff6b6b');
+    ctx.fill();
+  }
+
+  function updateReadout(hz, cents, status){
+    const { name } = describePitch(hz, a4);
+    noteEl.textContent = name;
+    freqEl.textContent = `${hz ? hz.toFixed(2) : '0.00'} Hz`;
+    centsEl.textContent = `${cents>0?'+':''}${cents}¢`;
+    statusEl.textContent = status || (hz? 'Detected' : 'Idle');
+  }
+
+  // Page visibility: pause AudioContext to save power when hidden
+  document.addEventListener('visibilitychange', async () => {
+    if (!audioCtx) return;
+    if (document.hidden) await audioCtx.suspend(); else await audioCtx.resume();
+  });
+})();
+</script>
+</body>
+</html>
